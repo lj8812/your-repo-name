@@ -43,7 +43,7 @@ jobs:
           rm -rf package/luci-app-webfilter
           
           # 克隆并修复仓库结构
-          git clone --depth=1 https://github.com/xxtt8812/luci-app-webfilter.git package/luci-app-webfilter
+          git clone --depth=1 https://github.com/lj8812/luci-app-webfilter.git package/luci-app-webfilter
           
           # 目录结构验证
           echo "=== 插件目录结构 ==="
