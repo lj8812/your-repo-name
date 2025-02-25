@@ -40,40 +40,38 @@ jobs:
       - name: Add WebFilter plugin
         run: |
           cd openwrt
-          # 标准路径结构
           mkdir -p package/network/services
           rm -rf package/network/services/luci-app-webfilter
           
-          # 克隆到OpenWRT标准目录
           git clone --depth=1 https://github.com/lj8812/luci-app-webfilter.git \
             package/network/services/luci-app-webfilter
           
-          # 生成包索引
           ./scripts/feeds install -a
-          
-          # 目录结构验证
           echo "=== 插件目录结构 ==="
           tree -L 3 package/network/services/luci-app-webfilter
           
-          # 关键文件检查
           if [ ! -f "package/network/services/luci-app-webfilter/Makefile" ]; then
             echo "::error::Makefile缺失！当前路径: $(pwd)"
             find package/ -name '*webfilter*' -exec echo "发现文件: {}" \;
             exit 1
           fi
 
-          # 版本适配补丁
           sed -i 's/iptables /iptables-legacy /g' package/network/services/luci-app-webfilter/root/etc/init.d/webfilter
 
       - name: Configure target
         run: |
           cd openwrt
           cat >> .config << 'EOF'
-          # 硬件架构
           CONFIG_TARGET_x86=y
           CONFIG_TARGET_x86_64=y
 
-          # 核心内核模块
+          # 签名工具配置
+          CONFIG_SIGNED_PACKAGES=y
+          CONFIG_BUILD_TOOLS=y
+          CONFIG_PACKAGE_usign=y
+          CONFIG_PACKAGE_libubox=y
+
+          # 内核模块
           CONFIG_PACKAGE_kmod-nf-conntrack=y
           CONFIG_PACKAGE_kmod-ipt-core=y
           CONFIG_PACKAGE_kmod-ipt-ipset=y
@@ -95,7 +93,6 @@ jobs:
           CONFIG_PACKAGE_dnsmasq=n
           EOF
 
-          # 应用配置
           make defconfig
           echo "=== 最终有效配置 ==="
           ./scripts/diffconfig.sh
@@ -103,43 +100,43 @@ jobs:
       - name: Build toolchain
         run: |
           cd openwrt
+          # 分步构建工具链
+          make tools/install -j$(nproc) V=s
           make toolchain/install -j$(nproc) V=s
+          
+          # 显式构建签名工具
+          echo "::group::构建签名工具"
+          make package/libubox/compile V=sc
+          make package/usign/compile V=sc
+          echo "::endgroup::"
 
       - name: 清理并编译
         run: |
           cd openwrt
-          # 强制清理残留
           rm -rf tmp/ package/network/services/luci-app-webfilter/ipkg-*
           
-          # 预生成索引
-          make package/index V=s
-          
-          # 带调试的清理步骤
-          echo "::group::执行清理 (耗时约30秒)"
-          make package/network/services/luci-app-webfilter/clean V=sc || {
-            echo "::warning::清理失败，尝试强制继续编译";
-            true;
-          }
+          echo "::group::生成包索引（忽略签名错误）"
+          make package/index V=s IPKG_REMOVE_UNSIGNED=1 || true
           echo "::endgroup::"
           
-          # 详细编译
-          echo "::group::编译详细日志 (耗时约5分钟)"
+          echo "::group::执行清理"
+          make package/network/services/luci-app-webfilter/clean V=sc || true
+          echo "::endgroup::"
+          
+          echo "::group::编译详细日志"
           {
             make package/network/services/luci-app-webfilter/compile -j1 V=sc 2>&1 | tee build.log
           } || {
-            echo "::error::编译失败，错误摘要："
-            grep -C10 'ERROR:' build.log
+            grep -C15 'ERROR:' build.log
             exit 1
           }
           echo "::endgroup::"
           
-          # 产物验证
           if ! ls bin/packages/x86_64/base/luci-app-webfilter*.ipk >/dev/null 2>&1; then
-            echo "::error::编译产物未生成，可能原因："
-            echo "1. 依赖缺失: $(grep 'missing dependencies' build.log | sort | uniq)"
-            echo "2. Makefile路径错误"
+            echo "::error::编译产物验证失败"
+            grep -e 'missing' -e 'error' build.log | sort | uniq
             exit 1
-          fi][=[
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
