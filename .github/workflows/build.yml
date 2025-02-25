@@ -103,18 +103,20 @@ jobs:
           cd openwrt
           make toolchain/install -j$(nproc) V=s
 
-      - name: Build plugin
+      - name: 清理并编译
         run: |
           cd openwrt
-          # 清理旧编译
-          make package/luci-app-webfilter/clean
-          
-          # 详细构建过程
+          # 确保包存在
+          if [ ! -d "package/luci-app-webfilter" ]; then
+            echo "::error::luci-app-webfilter包路径不存在"
+            exit 1
+          fi
+          # 详细清理
+          make package/luci-app-webfilter/clean V=sc
           echo "::group::编译详细日志"
           make package/luci-app-webfilter/compile -j1 V=sc 2>&1 | tee build.log
           echo "::endgroup::"
-          
-          # 自动错误分析
+          # 错误分析...
           if grep -q "No rule to make target" build.log; then
             echo "::error::包结构验证失败，请检查Makefile路径"
             exit 1
