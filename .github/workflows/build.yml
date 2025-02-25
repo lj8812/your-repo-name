@@ -28,7 +28,7 @@ jobs:
         run: |
           git clone https://git.openwrt.org/openwrt/openwrt.git --branch v${{ env.OPENWRT_VERSION }} --depth 1
           cd openwrt
-          echo "OpenWrt版本验证: $(cat include/version.mk | grep VERSION_NUMBER)"
+          echo "OpenWrt版本验证: $(grep 'VERSION_NUMBER:=' include/version.mk | cut -d' ' -f2)"
 
       - name: Update feeds
         run: |
@@ -40,11 +40,11 @@ jobs:
       - name: Add WebFilter plugin
         run: |
           cd openwrt
-          # 使用标准包目录结构
+          # 标准路径结构
           mkdir -p package/network/services
           rm -rf package/network/services/luci-app-webfilter
           
-          # 克隆到标准目录
+          # 克隆到OpenWRT标准目录
           git clone --depth=1 https://github.com/lj8812/luci-app-webfilter.git \
             package/network/services/luci-app-webfilter
           
@@ -56,15 +56,14 @@ jobs:
           tree -L 3 package/network/services/luci-app-webfilter
           
           # 关键文件检查
-          [ -f "package/network/services/luci-app-webfilter/Makefile" ] || { 
-            echo "::error::Makefile缺失！当前路径: $(pwd)";
-            find package/ -name '*webfilter*' -exec echo "发现文件: {}" \; ;
-            exit 1;
-          }
+          if [ ! -f "package/network/services/luci-app-webfilter/Makefile" ]; then
+            echo "::error::Makefile缺失！当前路径: $(pwd)"
+            find package/ -name '*webfilter*' -exec echo "发现文件: {}" \;
+            exit 1
+          fi
 
-          # 23.05版本适配补丁
+          # 版本适配补丁
           sed -i 's/iptables /iptables-legacy /g' package/network/services/luci-app-webfilter/root/etc/init.d/webfilter
-          sed -i 's/iptables-save /iptables-legacy-save /g' package/network/services/luci-app-webfilter/root/etc/init.d/webfilter
 
       - name: Configure target
         run: |
@@ -74,33 +73,20 @@ jobs:
           CONFIG_TARGET_x86=y
           CONFIG_TARGET_x86_64=y
 
-          # 必要内核模块
-          CONFIG_PACKAGE_kmod-nfnetlink=y
-          CONFIG_PACKAGE_kmod-ipt-ipset=y
+          # 核心内核模块
           CONFIG_PACKAGE_kmod-nf-conntrack=y
+          CONFIG_PACKAGE_kmod-ipt-core=y
+          CONFIG_PACKAGE_kmod-ipt-ipset=y
 
-          # 主插件
+          # 主插件配置
           CONFIG_PACKAGE_luci-app-webfilter=y
           CONFIG_PACKAGE_luci-i18n-webfilter-zh-cn=y
 
-          # Luci依赖
-          CONFIG_PACKAGE_luci-compat=y
-          CONFIG_PACKAGE_luci-lib-ipkg=y
-
-          # 显式依赖
+          # 依赖配置
           CONFIG_PACKAGE_iptables-legacy=y
-          CONFIG_PACKAGE_iptables-legacy-utils=y
-          CONFIG_PACKAGE_ipset=y
           CONFIG_PACKAGE_dnsmasq-full=y
-
-          # 隐式依赖
-          CONFIG_PACKAGE_libipset=y
-          CONFIG_PACKAGE_libmnl=y
-          CONFIG_PACKAGE_libubus=y
-          CONFIG_PACKAGE_libblobmsg-json=y
-          CONFIG_PACKAGE_libjson-c=y
-          CONFIG_PACKAGE_libuci=y
-          CONFIG_PACKAGE_libopenssl=y
+          CONFIG_PACKAGE_ipset=y
+          CONFIG_PACKAGE_luci-compat=y
 
           # 语言支持
           CONFIG_LUCI_LANG_zh-cn=y
@@ -128,20 +114,16 @@ jobs:
           # 预生成索引
           make package/index V=s
           
-          echo "=== 编译前验证 ==="
-          ls -l package/network/services/luci-app-webfilter/Makefile
-          grep 'luci-app-webfilter' package/feeds/luci.index
-          
           # 带调试的清理步骤
-          echo "::group::执行清理"
+          echo "::group::执行清理 (耗时约30秒)"
           make package/network/services/luci-app-webfilter/clean V=sc || {
-            echo "::warning::清理失败，尝试继续编译";
+            echo "::warning::清理失败，尝试强制继续编译";
             true;
           }
           echo "::endgroup::"
           
           # 详细编译
-          echo "::group::编译详细日志"
+          echo "::group::编译详细日志 (耗时约5分钟)"
           {
             make package/network/services/luci-app-webfilter/compile -j1 V=sc 2>&1 | tee build.log
           } || {
@@ -153,10 +135,11 @@ jobs:
           
           # 产物验证
           if ! ls bin/packages/x86_64/base/luci-app-webfilter*.ipk >/dev/null 2>&1; then
-            echo "::error::编译产物未生成，请检查依赖关系"
-            grep 'missing dependencies' build.log | sort | uniq
+            echo "::error::编译产物未生成，可能原因："
+            echo "1. 依赖缺失: $(grep 'missing dependencies' build.log | sort | uniq)"
+            echo "2. Makefile路径错误"
             exit 1
-          fi
+          fi][=[
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
