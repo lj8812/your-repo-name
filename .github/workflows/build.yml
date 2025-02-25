@@ -38,7 +38,7 @@ jobs:
       - name: Add plugin
         run: |
           cd openwrt
-          git clone https://github.com/lj8812/luci-app-control-webrestriction.git package/luci-app-control-webrestriction
+          git clone https://github.com/lj8812/luci-app-webfilter.git  package/luci-app-webfilter
 
       - name: Configure target
         run: |
@@ -46,9 +46,14 @@ jobs:
           cat >> .config << EOF
           CONFIG_TARGET_x86=y
           CONFIG_TARGET_x86_64=y
-          CONFIG_PACKAGE_luci-app-control-webrestriction=y
-          CONFIG_PACKAGE_dnsmasq_full_dnssec=y
+          CONFIG_PACKAGE_luci-app-webfilter=y
+          CONFIG_PACKAGE_luci-i18n-webfilter-zh-cn=y
+          CONFIG_PACKAGE_iptables-legacy=y
+          CONFIG_PACKAGE_dnsmasq-full=y
+          CONFIG_PACKAGE_ipset=y
           CONFIG_PACKAGE_luci-compat=y
+          CONFIG_PACKAGE_kmod-ipt-core=y
+          CONFIG_PACKAGE_kmod-ipt-ipset=y
           EOF
           make defconfig
 
