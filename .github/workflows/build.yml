@@ -54,6 +54,7 @@ jobs:
           CONFIG_PACKAGE_luci-compat=y
           CONFIG_PACKAGE_kmod-ipt-core=y
           CONFIG_PACKAGE_kmod-ipt-ipset=y
+          CONFIG_PACKAGE_luci-base=y
           EOF
           make defconfig
 
