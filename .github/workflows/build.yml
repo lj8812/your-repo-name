@@ -40,22 +40,31 @@ jobs:
       - name: Add WebFilter plugin
         run: |
           cd openwrt
-          rm -rf package/luci-app-webfilter
+          # 使用标准包目录结构
+          mkdir -p package/network/services
+          rm -rf package/network/services/luci-app-webfilter
           
-          # 克隆并修复仓库结构
-          git clone --depth=1 https://github.com/lj8812/luci-app-webfilter.git package/luci-app-webfilter
+          # 克隆到标准目录
+          git clone --depth=1 https://github.com/lj8812/luci-app-webfilter.git \
+            package/network/services/luci-app-webfilter
+          
+          # 生成包索引
+          ./scripts/feeds install -a
           
           # 目录结构验证
           echo "=== 插件目录结构 ==="
-          tree -L 3 package/luci-app-webfilter
+          tree -L 3 package/network/services/luci-app-webfilter
           
           # 关键文件检查
-          [ -f "package/luci-app-webfilter/Makefile" ] || { echo "::error::Makefile缺失！"; exit 1; }
-          [ -d "package/luci-app-webfilter/root" ] || echo "::warning::root目录缺失，可能影响安装脚本"
+          [ -f "package/network/services/luci-app-webfilter/Makefile" ] || { 
+            echo "::error::Makefile缺失！当前路径: $(pwd)";
+            find package/ -name '*webfilter*' -exec echo "发现文件: {}" \; ;
+            exit 1;
+          }
 
           # 23.05版本适配补丁
-          sed -i 's/iptables /iptables-legacy /g' package/luci-app-webfilter/root/etc/init.d/webfilter
-          sed -i 's/iptables-save /iptables-legacy-save /g' package/luci-app-webfilter/root/etc/init.d/webfilter
+          sed -i 's/iptables /iptables-legacy /g' package/network/services/luci-app-webfilter/root/etc/init.d/webfilter
+          sed -i 's/iptables-save /iptables-legacy-save /g' package/network/services/luci-app-webfilter/root/etc/init.d/webfilter
 
       - name: Configure target
         run: |
@@ -65,20 +74,24 @@ jobs:
           CONFIG_TARGET_x86=y
           CONFIG_TARGET_x86_64=y
 
+          # 必要内核模块
+          CONFIG_PACKAGE_kmod-nfnetlink=y
+          CONFIG_PACKAGE_kmod-ipt-ipset=y
+          CONFIG_PACKAGE_kmod-nf-conntrack=y
+
           # 主插件
           CONFIG_PACKAGE_luci-app-webfilter=y
+          CONFIG_PACKAGE_luci-i18n-webfilter-zh-cn=y
 
           # Luci依赖
           CONFIG_PACKAGE_luci-compat=y
           CONFIG_PACKAGE_luci-lib-ipkg=y
-          CONFIG_PACKAGE_luci-i18n-webfilter-zh-cn=y
 
           # 显式依赖
           CONFIG_PACKAGE_iptables-legacy=y
           CONFIG_PACKAGE_iptables-legacy-utils=y
           CONFIG_PACKAGE_ipset=y
           CONFIG_PACKAGE_dnsmasq-full=y
-          CONFIG_PACKAGE_kmod-ipt-ipset=y
 
           # 隐式依赖
           CONFIG_PACKAGE_libipset=y
@@ -88,6 +101,9 @@ jobs:
           CONFIG_PACKAGE_libjson-c=y
           CONFIG_PACKAGE_libuci=y
           CONFIG_PACKAGE_libopenssl=y
+
+          # 语言支持
+          CONFIG_LUCI_LANG_zh-cn=y
 
           # 禁用冲突包
           CONFIG_PACKAGE_dnsmasq=n
@@ -106,24 +122,39 @@ jobs:
       - name: 清理并编译
         run: |
           cd openwrt
-          # 确保包存在
-          if [ ! -d "package/luci-app-webfilter" ]; then
-            echo "::error::luci-app-webfilter包路径不存在"
-            exit 1
-          fi
-          # 详细清理
-          make package/luci-app-webfilter/clean V=sc
-          echo "::group::编译详细日志"
-          make package/luci-app-webfilter/compile -j1 V=sc 2>&1 | tee build.log
+          # 强制清理残留
+          rm -rf tmp/ package/network/services/luci-app-webfilter/ipkg-*
+          
+          # 预生成索引
+          make package/index V=s
+          
+          echo "=== 编译前验证 ==="
+          ls -l package/network/services/luci-app-webfilter/Makefile
+          grep 'luci-app-webfilter' package/feeds/luci.index
+          
+          # 带调试的清理步骤
+          echo "::group::执行清理"
+          make package/network/services/luci-app-webfilter/clean V=sc || {
+            echo "::warning::清理失败，尝试继续编译";
+            true;
+          }
           echo "::endgroup::"
-          # 错误分析...
-          if grep -q "No rule to make target" build.log; then
-            echo "::error::包结构验证失败，请检查Makefile路径"
+          
+          # 详细编译
+          echo "::group::编译详细日志"
+          {
+            make package/network/services/luci-app-webfilter/compile -j1 V=sc 2>&1 | tee build.log
+          } || {
+            echo "::error::编译失败，错误摘要："
+            grep -C10 'ERROR:' build.log
             exit 1
-          fi
-          if grep -q "missing dependencies" build.log; then
-            echo "::warning::发现未声明的依赖项："
-            grep "missing dependencies" build.log | awk -F: '{print $2}' | sort | uniq
+          }
+          echo "::endgroup::"
+          
+          # 产物验证
+          if ! ls bin/packages/x86_64/base/luci-app-webfilter*.ipk >/dev/null 2>&1; then
+            echo "::error::编译产物未生成，请检查依赖关系"
+            grep 'missing dependencies' build.log | sort | uniq
             exit 1
           fi
 
