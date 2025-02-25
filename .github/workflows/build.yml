@@ -65,10 +65,10 @@ jobs:
       - name: Build plugin
         run: |
           cd openwrt
-          make package/luci-app-control-webrestriction/compile -j$(nproc) V=s
+          make package/luci-app-webfilter/compile -j$(nproc) V=s
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: control-webrestriction-x86_64
-          path: openwrt/bin/packages/x86_64/base/luci-app-control-webrestriction*.ipk
+          path: openwrt/bin/packages/x86_64/base/luci-app-webfilter*.ipk
