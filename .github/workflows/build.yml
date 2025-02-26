@@ -58,15 +58,6 @@ jobs:
           EOF
           make defconfig
 
-      # 新增关键依赖编译步骤 --------------------------------------------------
-      - name: Build dependencies
-        run: |
-          cd openwrt
-          # 强制单线程编译基础组件
-          make -j1 tools/install V=s
-          make -j1 package/luci-base/compile V=s
-          make -j1 package/libjson-c/compile V=s
-
       - name: Build toolchain
         run: |
           cd openwrt
