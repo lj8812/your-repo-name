@@ -29,23 +29,25 @@ jobs:
           git clone https://git.openwrt.org/openwrt/openwrt.git --branch v${{ env.OPENWRT_VERSION }} --depth 1
           cd openwrt
 
-      - name: Update feeds with luci-compat
+      - name: Update feeds (关键修复)
         run: |
           cd openwrt
           ./scripts/feeds update -a
-          ./scripts/feeds install luci-compat libpam liblzma libnetsnmp
+          ./scripts/feeds install -a -p luci  # 强制安装luci feed
+          ./scripts/feeds install luci-base luci-compat  # 显式安装基础组件
 
       - name: Add plugin
         run: |
           cd openwrt
           git clone https://github.com/lj8812/luci-app-blockclient.git  package/luci-app-blockclient
 
-      - name: Configure target
+      - name: Configure target (新增luci-base编译)
         run: |
           cd openwrt
           cat >> .config << EOF
           CONFIG_TARGET_x86=y
           CONFIG_TARGET_x86_64=y
+          CONFIG_PACKAGE_luci-base=y  # 确保基础包启用
           CONFIG_PACKAGE_luci-app-blockclient=y
           CONFIG_PACKAGE_luci-i18n-blockclient-zh-cn=y
           CONFIG_PACKAGE_iptables=y
@@ -54,18 +56,23 @@ jobs:
           CONFIG_PACKAGE_luci-compat=y
           CONFIG_PACKAGE_kmod-ipt-core=y
           CONFIG_PACKAGE_kmod-ipt-ipset=y
-          CONFIG_PACKAGE_luci-base=y
           EOF
           make defconfig
+
+      - name: Build luci-base first (新增步骤)
+        run: |
+          cd openwrt
+          make -j$(nproc) package/luci-base/compile V=s  # 优先编译基础包
 
       - name: Build toolchain
         run: |
           cd openwrt
           make toolchain/install -j$(nproc) V=s
 
-      - name: Build plugin
+      - name: Build plugin (修复路径)
         run: |
           cd openwrt
+          export STAGING_DIR_HOST=$(pwd)/staging_dir/host  # 设置工具路径变量
           make package/luci-app-blockclient/compile -j$(nproc) V=s
 
       - name: Upload artifacts
