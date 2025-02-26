@@ -12,9 +12,6 @@ env:
 jobs:
   build-plugin:
     runs-on: ubuntu-latest
-    env:
-      WORKSPACE: ${{ github.workspace }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,47 +24,28 @@ jobs:
             rsync unzip zlib1g-dev file wget libtool-bin automake autoconf libpam0g-dev \
             liblzma-dev libsnmp-dev
 
-      - name: Clone OpenWrt source (关键修复)
+      - name: Clone OpenWrt source
         run: |
           git clone https://git.openwrt.org/openwrt/openwrt.git --branch v${{ env.OPENWRT_VERSION }} --depth 1
           cd openwrt
-          # 强制初始化目录结构
-          mkdir -p host
-          touch host/.prereq-build
-          chmod -R 755 host
 
-      - name: Prepare prerequisite directories
-        run: |
-          cd openwrt
-          # 确保所有必要目录存在
-          mkdir -p staging_dir/host/bin
-          mkdir -p staging_dir/target-x86_64_musl/usr/bin
-          chmod -R 755 staging_dir
-
-      - name: Update feeds
+      - name: Update feeds with luci-compat
         run: |
           cd openwrt
           ./scripts/feeds update -a
-          ./scripts/feeds install -a -p luci
-          ./scripts/feeds install luci-base luci-compat
+          ./scripts/feeds install luci-compat libpam liblzma libnetsnmp
 
       - name: Add plugin
         run: |
           cd openwrt
-          git clone https://github.com/lj8812/luci-app-blockclient.git package/luci-app-blockclient
+          git clone https://github.com/lj8812/luci-app-blockclient.git  package/luci-app-blockclient
 
-      - name: Configure target (关键修复)
+      - name: Configure target
         run: |
           cd openwrt
-          # 前置环境检查
-          make prereq
-          
-          # 生成配置
           cat >> .config << EOF
           CONFIG_TARGET_x86=y
           CONFIG_TARGET_x86_64=y
-          CONFIG_PACKAGE_luci-base=y
-          CONFIG_PACKAGE_csstidy=y
           CONFIG_PACKAGE_luci-app-blockclient=y
           CONFIG_PACKAGE_luci-i18n-blockclient-zh-cn=y
           CONFIG_PACKAGE_iptables=y
@@ -76,25 +54,18 @@ jobs:
           CONFIG_PACKAGE_luci-compat=y
           CONFIG_PACKAGE_kmod-ipt-core=y
           CONFIG_PACKAGE_kmod-ipt-ipset=y
+          CONFIG_PACKAGE_luci-base=y
           EOF
-          
-          # 修复目录权限
-          chmod 755 host
-          chmod 644 host/.prereq-build
           make defconfig
 
-      - name: Build dependencies
+      - name: Build toolchain
         run: |
           cd openwrt
-          # 单线程编译基础组件
-          make -j1 tools/install V=s
-          make -j1 toolchain/install V=s
-          make -j1 package/luci-base/compile V=s
+          make toolchain/install -j$(nproc) V=s
 
       - name: Build plugin
         run: |
           cd openwrt
-          export STAGING_DIR_HOST=${{ env.WORKSPACE }}/openwrt/staging_dir/host
           make package/luci-app-blockclient/compile -j$(nproc) V=s
 
       - name: Upload artifacts
