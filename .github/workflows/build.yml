@@ -12,11 +12,6 @@ env:
 jobs:
   build-plugin:
     runs-on: ubuntu-latest
-    env:
-      TERM: dumb
-      STAGING_DIR: ${{ github.workspace }}/openwrt/staging_dir
-      STAGING_DIR_HOST: ${{ github.workspace }}/openwrt/staging_dir/host
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,7 +20,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang flex g++ gawk gcc-multilib \
-            gettext git libncursesw5-dev libssl-dev python3 python3-venv python3-dev \
+            gettext git libncurses5-dev libssl-dev python3 python3-venv python3-dev \
             rsync unzip zlib1g-dev file wget libtool-bin automake autoconf libpam0g-dev \
             liblzma-dev libsnmp-dev
 
@@ -33,49 +28,54 @@ jobs:
         run: |
           git clone https://git.openwrt.org/openwrt/openwrt.git --branch v${{ env.OPENWRT_VERSION }} --depth 1
           cd openwrt
-          mkdir -p host
-          touch host/.prereq-build
-          chmod -R 755 host
 
-      - name: Force install luci-base dependencies
+      - name: Update feeds with luci-compat
         run: |
           cd openwrt
           ./scripts/feeds update -a
-          ./scripts/feeds install -a -p luci
-          ./scripts/feeds install luci-base luci-compat luci-lib-ipkg
+          ./scripts/feeds install luci-compat libpam liblzma libnetsnmp
+
+      - name: Add plugin
+        run: |
+          cd openwrt
+          git clone https://github.com/lj8812/luci-app-blockclient.git  package/luci-app-blockclient
 
       - name: Configure target
         run: |
           cd openwrt
-          cat > .config << EOF
+          cat >> .config << EOF
           CONFIG_TARGET_x86=y
           CONFIG_TARGET_x86_64=y
-          CONFIG_PACKAGE_luci-base=y
-          CONFIG_PACKAGE_luci-lib-ipkg=y
-          CONFIG_PACKAGE_csstidy=y
           CONFIG_PACKAGE_luci-app-blockclient=y
           CONFIG_PACKAGE_luci-i18n-blockclient-zh-cn=y
+          CONFIG_PACKAGE_iptables=y
+          CONFIG_PACKAGE_dnsmasq-full=y
+          CONFIG_PACKAGE_ipset=y
+          CONFIG_PACKAGE_luci-compat=y
+          CONFIG_PACKAGE_kmod-ipt-core=y
+          CONFIG_PACKAGE_kmod-ipt-ipset=y
+          CONFIG_PACKAGE_luci-base=y
           EOF
-          make olddefconfig
+          make defconfig
 
-      - name: Build luci-base with po2lmo
+      # 新增关键依赖编译步骤 --------------------------------------------------
+      - name: Build dependencies
         run: |
           cd openwrt
-          # 强制编译 luci-base 和依赖
-          make -j1 tools/compile V=s
-          make -j1 toolchain/compile V=s
-          make -j1 package/luci-base/{clean,compile} V=s
+          # 强制单线程编译基础组件
+          make -j1 tools/install V=s
+          make -j1 package/luci-base/compile V=s
+          make -j1 package/libjson-c/compile V=s
 
-          # 关键验证步骤
-          echo "----- po2lmo 路径验证 -----"
-          ls -l $STAGING_DIR_HOST/bin/po2lmo
-          file $STAGING_DIR_HOST/bin/po2lmo
+      - name: Build toolchain
+        run: |
+          cd openwrt
+          make toolchain/install -j$(nproc) V=s
 
       - name: Build plugin
         run: |
           cd openwrt
-          export PATH=$STAGING_DIR_HOST/bin:$PATH
-          make package/luci-app-blockclient/{clean,compile} -j$(nproc) V=s
+          make package/luci-app-blockclient/compile -j$(nproc) V=s
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
