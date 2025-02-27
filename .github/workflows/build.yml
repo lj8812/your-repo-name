@@ -38,17 +38,20 @@ jobs:
           cd openwrt/package
           git clone https://github.com/lj8812/luci-app-webrestriction.git
           
-          # 修复权限问题
+          # 修复路径映射问题
+          mv luci-app-webrestriction/luci-app-webrestriction/* luci-app-webrestriction/
+          rm -rf luci-app-webrestriction/luci-app-webrestriction
+          
+          # 权限修复
           sudo chown -R $(id -u):$(id -g) luci-app-webrestriction
           
-          # 验证目录结构
-          echo "::group::Plugin directory structure"
-          ls -laR luci-app-webrestriction
-          echo "::endgroup::"
-          
+          # 精确验证路径
+          echo "::group::Critical Path Verification"
+          ls -l luci-app-webrestriction/etc/config/webrestriction
           [ -f luci-app-webrestriction/etc/config/webrestriction ] \
-            && echo "✅ Config verification passed" \
-            || { echo "❌ Missing config file"; exit 1; }
+            && echo "✅ Config file verified" \
+            || { echo "❌ Config file missing"; exit 1; }
+          echo "::endgroup::"
       # ========== 关键修改结束 ==========
 
       - name: Update feeds
