@@ -54,19 +54,30 @@ jobs:
       - name: Configure target
         run: |
           cd openwrt
+          # 写入基础配置
           cat >> .config << EOF
-          CONFIG_TARGET_x86=y
           CONFIG_TARGET_x86_64=y
+          CONFIG_TARGET_x86=y
+          EOF
+
+          # 追加插件依赖配置
+          cat >> .config << EOF
+          # Web访问限制插件依赖
           CONFIG_PACKAGE_luci-app-webrestriction=y
           CONFIG_PACKAGE_luci-i18n-webrestriction-zh-cn=y
-          CONFIG_PACKAGE_iptables=y
-          CONFIG_PACKAGE_dnsmasq-full=y
-          CONFIG_PACKAGE_ipset=y
-          CONFIG_PACKAGE_luci-compat=y
-          CONFIG_PACKAGE_kmod-ipt-core=y
-          CONFIG_PACKAGE_kmod-ipt-ipset=y
           CONFIG_PACKAGE_luci-base=y
+          CONFIG_PACKAGE_luci-compat=y
+          CONFIG_PACKAGE_rpcd=y
+          CONFIG_PACKAGE_ipset=y
+          CONFIG_PACKAGE_iptables-nft=y
+          CONFIG_PACKAGE_kmod-ipt-core=y
+          CONFIG_PACKAGE_kmod-nf-conntrack=y
+          CONFIG_PACKAGE_libnftnl=y
+          CONFIG_PACKAGE_libiptext=y
+          CONFIG_PACKAGE_libubus-lua=y
+          CONFIG_PACKAGE_libuci-lua=y
           EOF
+          
           make defconfig
 
       - name: Build toolchain
