@@ -38,6 +38,30 @@ jobs:
           cd openwrt/package
           git clone https://github.com/lj8812/luci-app-webrestriction.git
           
+          # ========== 完整文件验证 ==========
+          echo "::group::关键文件清单验证"
+          declare -A file_map=(
+            ["控制器文件"]="luci-app-webrestriction/luci/modules/admin-full/controller/webrestriction.lua"
+            ["模型文件"]="luci-app-webrestriction/luci/modules/admin-full/model/cbi/webrestriction.lua"
+            ["配置文件"]="luci-app-webrestriction/etc/config/webrestriction"
+            ["服务脚本"]="luci-app-webrestriction/etc/init.d/webrestriction"
+            ["中文翻译"]="luci-app-webrestriction/luci/i18n/zh_Hans/webrestriction.po"
+            ["权限配置"]="luci-app-webrestriction/luci/root/usr/share/rpcd/acl.d/luci-app-webrestriction.json"
+          )
+          
+          for desc in "${!file_map[@]}"; do
+            file=${file_map[$desc]}
+            echo -n "检查 $desc ... "
+            if [ -f "$file" ]; then
+              echo "✅ 存在 (大小: $(wc -c < "$file") 字节)"
+            else
+              echo "❌ 缺失"
+              exit 1
+            fi
+          done
+          echo "::endgroup::"
+          # ================================
+          
           # ========== 新增修复步骤 ==========
           cd luci-app-webrestriction
           sed -i 's/^    /\t/' Makefile  # 修复Makefile缩进
