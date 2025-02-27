@@ -38,20 +38,26 @@ jobs:
           cd openwrt/package
           git clone https://github.com/lj8812/luci-app-webrestriction.git
           
-          # 修复路径映射问题
-          mv luci-app-webrestriction/luci-app-webrestriction/* luci-app-webrestriction/
-          rm -rf luci-app-webrestriction/luci-app-webrestriction
-          
-          # 权限修复
-          sudo chown -R $(id -u):$(id -g) luci-app-webrestriction
-          
-          # 精确验证路径
-          echo "::group::Critical Path Verification"
-          ls -l luci-app-webrestriction/etc/config/webrestriction
-          [ -f luci-app-webrestriction/etc/config/webrestriction ] \
-            && echo "✅ Config file verified" \
-            || { echo "❌ Config file missing"; exit 1; }
+          # 调试目录结构
+          echo "::group::原始仓库结构"
+          ls -laR luci-app-webrestriction
           echo "::endgroup::"
+          
+          # 智能处理嵌套目录（如果存在）
+          if [ -d "luci-app-webrestriction/luci-app-webrestriction" ]; then
+            mv luci-app-webrestriction/luci-app-webrestriction/* luci-app-webrestriction/
+            rm -rf luci-app-webrestriction/luci-app-webrestriction
+          fi
+          
+          # 二次验证目录结构
+          echo "::group::处理后的仓库结构"
+          ls -laR luci-app-webrestriction
+          echo "::endgroup::"
+          
+          # 精确路径验证
+          [ -f "luci-app-webrestriction/etc/config/webrestriction" ] \
+            && echo "✅ 配置文件验证通过" \
+            || { echo "❌ 配置文件缺失，请检查仓库结构"; exit 1; }
       # ========== 关键修改结束 ==========
 
       - name: Update feeds
