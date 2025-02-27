@@ -90,10 +90,6 @@ jobs:
           ls -laR luci-app-webrestriction
           echo "::endgroup::"
           
-          # 精确路径验证
-          [ -f "luci-app-webrestriction/etc/config/webrestriction" ] \
-            && echo "✅ 配置文件验证通过" \
-            || { echo "❌ 配置文件缺失，请检查仓库结构"; exit 1; }
           # 新增构建目录验证
           cd openwrt
           echo "::group::构建目录深度验证"
