@@ -94,6 +94,44 @@ jobs:
           [ -f "luci-app-webrestriction/etc/config/webrestriction" ] \
             && echo "✅ 配置文件验证通过" \
             || { echo "❌ 配置文件缺失，请检查仓库结构"; exit 1; }
+          # 新增构建目录验证
+          cd openwrt
+          echo "::group::构建目录深度验证"
+          
+          # 动态获取构建目录路径
+          BUILD_DIR=$(make --no-print-directory -C package/luci-app-webrestriction DUMP=1 | grep '^Build/Prepare:' | awk -F "'" '{print $2}')
+          echo "构建目录路径: $BUILD_DIR"
+          
+          # 关键文件清单
+          declare -A build_files=(
+            ["控制器文件"]="$BUILD_DIR/luci/modules/admin-full/controller/webrestriction.lua"
+            ["模型文件"]="$BUILD_DIR/luci/modules/admin-full/model/cbi/webrestriction.lua"
+            ["配置文件"]="$BUILD_DIR/etc/config/webrestriction"
+            ["服务脚本"]="$BUILD_DIR/etc/init.d/webrestriction"
+            ["中文翻译"]="$BUILD_DIR/luci/i18n/zh_Hans/webrestriction.po"
+            ["权限配置"]="$BUILD_DIR/luci/root/usr/share/rpcd/acl.d/luci-app-webrestriction.json"
+          )
+          
+          # 递归验证文件结构
+          for desc in "${!build_files[@]}"; do
+            file="${build_files[$desc]}"
+            echo -n "验证 $desc ... "
+            if [ -f "$file" ]; then
+              echo "✅ 存在 (校验码: $(sha1sum "$file" | cut -c1-7))"
+            else
+              echo "❌ 缺失于: $file"
+              find "${file%/*}" -maxdepth 1 -ls
+              exit 1
+            fi
+          done
+          
+          echo "::endgroup::"
+          
+          # 目录结构快照
+          echo "::group::构建目录结构树"
+          tree -dL 4 "$BUILD_DIR"
+          echo "::endgroup::"
+          
       # ========== 关键修改结束 ==========
 
       - name: Update feeds
@@ -134,7 +172,65 @@ jobs:
       - name: Build plugin
         run: |
           cd openwrt
+          echo "::group::实时文件监控"
+          inotifywait -mr ./build_dir 2>&1 | grep -E 'webrestriction|CREATE' &
+          MONITOR_PID=$!
+          
           make package/luci-app-webrestriction/compile -j$(nproc) V=s
+          
+          kill $MONITOR_PID
+          echo "::endgroup::"
+          
+          # 最终验证 (插入点)
+          echo "::group::编译产物验证"
+          IPK_FILE=$(find bin/packages/x86_64/base/ -name 'luci-app-webrestriction_*.ipk')
+          [ -f "$IPK_FILE" ] && {
+            echo "✅ 编译成功: $(ls -lh "$IPK_FILE")"
+            tar -tzvf "$IPK_FILE" | grep -E 'usr/lib/lua/luci/controller/webrestriction.lua|etc/config/webrestriction'
+          } || {
+            echo "❌ 未找到编译产物"
+            exit 1
+          }
+          echo "::endgroup::"
+          
+          # ▼▼▼ 在此插入 Post-Build Verification ▼▼▼
+          echo "::group::构建产物深度检查"
+          # 动态发现IPK文件
+          IPK_PATH=$(find bin/packages -name 'luci-app-webrestriction_*.ipk')
+          [ -n "$IPK_PATH" ] || { echo "❌ 未找到编译产物"; exit 1; }
+          
+          # 创建临时检查目录
+          CHECK_DIR="${HOME}/ipk_check"
+          mkdir -p "${CHECK_DIR}"
+          
+          # 解包分析
+          tar -xzvf "${IPK_PATH}" -C "${CHECK_DIR}"
+          
+          # 关键文件清单验证
+          declare -A EXPECTED_FILES=(
+            ["控制器"]="usr/lib/lua/luci/controller/webrestriction.lua"
+            ["配置"]="etc/config/webrestriction"
+            ["服务脚本"]="etc/init.d/webrestriction"
+            ["权限配置"]="usr/share/rpcd/acl.d/luci-app-webrestriction.json"
+          )
+          
+          for desc in "${!EXPECTED_FILES[@]}"; do
+            file="${CHECK_DIR}/${EXPECTED_FILES[$desc]}"
+            echo -n "检查 ${desc} ... "
+            if [ -f "$file" ]; then
+              echo "✅ 存在 (大小: $(wc -c < "$file") 字节)"
+            else
+              echo "❌ 缺失"
+              find "${CHECK_DIR}" -ls
+              exit 1
+            fi
+          done
+          
+          # 可执行文件验证
+          INIT_SCRIPT="${CHECK_DIR}/etc/init.d/webrestriction"
+          [ -x "$INIT_SCRIPT" ] || { echo "❌ 服务脚本不可执行"; ls -l "$INIT_SCRIPT"; exit 1; }
+          echo "::endgroup::"
+          # ▲▲▲ 插入结束 ▲▲▲
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
