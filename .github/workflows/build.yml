@@ -7,7 +7,7 @@ on:
 
 env:
   OPENWRT_VERSION: 23.05.2
-  TARGET: x86_64  # 修正格式：x86_64 替代 x86/64
+  TARGET: x86/64
 
 jobs:
   build-plugin:
@@ -19,102 +19,35 @@ jobs:
       - name: Setup build environment
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential clang flex g++ gawk gcc-multilib \
-            gettext git libncurses5-dev libssl-dev python3 \
-            python3-venv python3-dev rsync unzip zlib1g-dev \
-            file wget libtool-bin automake autoconf libpam0g-dev \
+          sudo apt-get install -y build-essential clang flex g++ gawk gcc-multilib \
+            gettext git libncurses5-dev libssl-dev python3 python3-venv python3-dev \
+            rsync unzip zlib1g-dev file wget libtool-bin automake autoconf libpam0g-dev \
             liblzma-dev libsnmp-dev
 
       - name: Clone OpenWrt source
         run: |
-          git clone https://git.openwrt.org/openwrt/openwrt.git \
-            --branch v${{ env.OPENWRT_VERSION }} \
-            --depth 1
+          git clone https://git.openwrt.org/openwrt/openwrt.git --branch v${{ env.OPENWRT_VERSION }} --depth 1
+          cd openwrt
 
-      # ========== 关键修改开始 ==========
-      - name: Add plugin
-        run: |
-          cd openwrt/package
-          git clone https://github.com/lj8812/luci-app-webrestriction.git
-          
-          # ========== 完整文件验证 ==========
-          echo "::group::关键文件清单验证"
-          declare -A file_map=(
-            ["控制器文件"]="luci-app-webrestriction/luci/modules/admin-full/controller/webrestriction.lua"
-            ["模型文件"]="luci-app-webrestriction/luci/modules/admin-full/model/cbi/webrestriction.lua"
-            ["配置文件"]="luci-app-webrestriction/etc/config/webrestriction"
-            ["服务脚本"]="luci-app-webrestriction/etc/init.d/webrestriction"
-            ["中文翻译"]="luci-app-webrestriction/luci/i18n/zh_Hans/webrestriction.po"
-            ["权限配置"]="luci-app-webrestriction/luci/root/usr/share/rpcd/acl.d/luci-app-webrestriction.json"
-          )
-          
-          for desc in "${!file_map[@]}"; do
-            file=${file_map[$desc]}
-            echo -n "检查 $desc ... "
-            if [ -f "$file" ]; then
-              echo "✅ 存在 (大小: $(wc -c < "$file") 字节)"
-            else
-              echo "❌ 缺失"
-              exit 1
-            fi
-          done
-          echo "::endgroup::"
-          # ================================
-          
-          # ========== 新增修复步骤 ==========
-          cd luci-app-webrestriction
-          sed -i 's/^    /\t/' Makefile  # 修复Makefile缩进
-          
-          # 验证Tab缩进（显示^I表示成功）
-          echo "::group::Makefile缩进检查"
-          cat -e -t -v Makefile | grep -m 3 '^\^I'
-          [ $? -eq 0 ] && echo "✅ Tab缩进验证通过" || { echo "❌ Tab缩进异常"; exit 1; }
-          echo "::endgroup::"
-          cd ..
-          # ================================
-          
-          # 调试目录结构
-          echo "::group::原始仓库结构"
-          ls -laR luci-app-webrestriction
-          echo "::endgroup::"
-          
-          # 智能处理嵌套目录（如果存在）
-          if [ -d "luci-app-webrestriction/luci-app-webrestriction" ]; then
-            mv luci-app-webrestriction/luci-app-webrestriction/* luci-app-webrestriction/
-            rm -rf luci-app-webrestriction/luci-app-webrestriction
-          fi
-          
-          # 二次验证目录结构
-          echo "::group::处理后的仓库结构"
-          ls -laR luci-app-webrestriction
-          echo "::endgroup::"
-          
-          # 精确路径验证
-          [ -f "luci-app-webrestriction/etc/config/webrestriction" ] \
-            && echo "✅ 配置文件验证通过" \
-            || { echo "❌ 配置文件缺失，请检查仓库结构"; exit 1; }
-          
-      # ========== 关键修改结束 ==========
-
-      - name: Update feeds
+      - name: Update feeds with luci-compat
         run: |
           cd openwrt
           ./scripts/feeds update -a
-          ./scripts/feeds install \
-            luci-compat \
-            libpam \
-            liblzma \
-            libnetsnmp
+          ./scripts/feeds install luci-compat libpam liblzma libnetsnmp
+
+      - name: Add plugin
+        run: |
+          cd openwrt
+          git clone https://github.com/lj8812/luci-app-blockclient.git  package/luci-app-blockclient
 
       - name: Configure target
         run: |
           cd openwrt
-          cat >> .config <<-EOF
+          cat >> .config << EOF
           CONFIG_TARGET_x86=y
           CONFIG_TARGET_x86_64=y
-          CONFIG_PACKAGE_luci-app-webrestriction=y
-          CONFIG_PACKAGE_luci-i18n-webrestriction-zh-cn=y
+          CONFIG_PACKAGE_luci-app-blockclient=y
+          CONFIG_PACKAGE_luci-i18n-blockclient-zh-cn=y
           CONFIG_PACKAGE_iptables=y
           CONFIG_PACKAGE_dnsmasq-full=y
           CONFIG_PACKAGE_ipset=y
@@ -122,8 +55,6 @@ jobs:
           CONFIG_PACKAGE_kmod-ipt-core=y
           CONFIG_PACKAGE_kmod-ipt-ipset=y
           CONFIG_PACKAGE_luci-base=y
-          CONFIG_PACKAGE_ebtables=y
-          CONFIG_PACKAGE_kmod-ebtables=y
           EOF
           make defconfig
 
@@ -135,68 +66,10 @@ jobs:
       - name: Build plugin
         run: |
           cd openwrt
-          echo "::group::实时文件监控"
-          inotifywait -mr ./build_dir 2>&1 | grep -E 'webrestriction|CREATE' &
-          MONITOR_PID=$!
-          
-          make package/luci-app-webrestriction/compile -j$(nproc) V=s
-          
-          kill $MONITOR_PID
-          echo "::endgroup::"
-          
-          # 最终验证 (插入点)
-          echo "::group::编译产物验证"
-          IPK_FILE=$(find bin/packages/x86_64/base/ -name 'luci-app-webrestriction_*.ipk')
-          [ -f "$IPK_FILE" ] && {
-            echo "✅ 编译成功: $(ls -lh "$IPK_FILE")"
-            tar -tzvf "$IPK_FILE" | grep -E 'usr/lib/lua/luci/controller/webrestriction.lua|etc/config/webrestriction'
-          } || {
-            echo "❌ 未找到编译产物"
-            exit 1
-          }
-          echo "::endgroup::"
-          
-          # ▼▼▼ 在此插入 Post-Build Verification ▼▼▼
-          echo "::group::构建产物深度检查"
-          # 动态发现IPK文件
-          IPK_PATH=$(find bin/packages -name 'luci-app-webrestriction_*.ipk')
-          [ -n "$IPK_PATH" ] || { echo "❌ 未找到编译产物"; exit 1; }
-          
-          # 创建临时检查目录
-          CHECK_DIR="${HOME}/ipk_check"
-          mkdir -p "${CHECK_DIR}"
-          
-          # 解包分析
-          tar -xzvf "${IPK_PATH}" -C "${CHECK_DIR}"
-          
-          # 关键文件清单验证
-          declare -A EXPECTED_FILES=(
-            ["控制器"]="usr/lib/lua/luci/controller/webrestriction.lua"
-            ["配置"]="etc/config/webrestriction"
-            ["服务脚本"]="etc/init.d/webrestriction"
-            ["权限配置"]="usr/share/rpcd/acl.d/luci-app-webrestriction.json"
-          )
-          
-          for desc in "${!EXPECTED_FILES[@]}"; do
-            file="${CHECK_DIR}/${EXPECTED_FILES[$desc]}"
-            echo -n "检查 ${desc} ... "
-            if [ -f "$file" ]; then
-              echo "✅ 存在 (大小: $(wc -c < "$file") 字节)"
-            else
-              echo "❌ 缺失"
-              find "${CHECK_DIR}" -ls
-              exit 1
-            fi
-          done
-          
-          # 可执行文件验证
-          INIT_SCRIPT="${CHECK_DIR}/etc/init.d/webrestriction"
-          [ -x "$INIT_SCRIPT" ] || { echo "❌ 服务脚本不可执行"; ls -l "$INIT_SCRIPT"; exit 1; }
-          echo "::endgroup::"
-          # ▲▲▲ 插入结束 ▲▲▲
+          make package/luci-app-blockclient/compile -j$(nproc) V=s
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: webrestriction-x86_64
-          path: openwrt/bin/packages/x86_64/base/luci-app-webrestriction*.ipk
+          name: blockclient-x86_64
+          path: openwrt/bin/packages/x86_64/base/luci-app-blockclient*.ipk
