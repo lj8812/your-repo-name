@@ -1,4 +1,4 @@
-name: Build Control WebRestriction Plugin (x86_64)
+name: Build Control webmia Plugin (x86_64)
 
 on:
   push:
@@ -38,9 +38,9 @@ jobs:
       - name: Add plugin
         run: |
           cd openwrt
-          git clone https://github.com/lj8812/luci-app-webrestriction.git  package/luci-app-webrestriction
+          git clone https://github.com/lj8812/luci-app-webmia.git  package/luci-app-webmia
           # ========== 新增修复步骤 ==========
-          cd package/luci-app-webrestriction
+          cd package/luci-app-webmia
           sed -i 's/^    /\t/' Makefile  # 修复Makefile缩进
           
           # 验证Tab缩进（显示^I表示成功）
@@ -63,12 +63,14 @@ jobs:
           # 追加插件依赖配置
           cat >> .config << EOF
           # Web访问限制插件依赖
-          CONFIG_PACKAGE_luci-app-webrestriction=y
-          CONFIG_PACKAGE_luci-i18n-webrestriction-zh-cn=y
+          CONFIG_PACKAGE_luci-app-webmia=y
+          CONFIG_PACKAGE_luci-i18n-webmia-zh-cn=y
           CONFIG_PACKAGE_luci-compat=y
           CONFIG_PACKAGE_luci-base=y
-          CONFIG_PACKAGE_iptables=y
-          CONFIG_PACKAGE_iptables-mod-filter=y
+		  CONFIG_PACKAGE_iptables=y
+          CONFIG_PACKAGE_iptables-mod-conntrack-extra=y
+          CONFIG_PACKAGE_iptables-mod-extra=y
+		  CONFIG_PACKAGE_kmod-ipt-time=y
           EOF
           
           make defconfig
@@ -81,10 +83,10 @@ jobs:
       - name: Build plugin
         run: |
           cd openwrt
-          make package/luci-app-webrestriction/compile -j$(nproc) V=s
+          make package/luci-app-webmia/compile -j$(nproc) V=s
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: webrestriction-x86_64
-          path: openwrt/bin/packages/x86_64/base/luci-app-webrestriction*.ipk
+          name: webmia-x86_64
+          path: openwrt/bin/packages/x86_64/base/luci-app-webmia*.ipk
