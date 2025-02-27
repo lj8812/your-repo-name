@@ -38,7 +38,9 @@ jobs:
       - name: Add plugin
         run: |
           cd openwrt
-          git clone https://github.com/lj8812/luci-app-blockclient.git  package/luci-app-blockclient
+          git clone https://github.com/lj8812/luci-app-webrestriction.git package/luci-app-webrestriction
+          # 修复 Makefile 缩进
+          sed -i 's/^  /\t/' package/luci-app-webrestriction/Makefile
 
       - name: Configure target
         run: |
@@ -46,8 +48,8 @@ jobs:
           cat >> .config << EOF
           CONFIG_TARGET_x86=y
           CONFIG_TARGET_x86_64=y
-          CONFIG_PACKAGE_luci-app-blockclient=y
-          CONFIG_PACKAGE_luci-i18n-blockclient-zh-cn=y
+          CONFIG_PACKAGE_luci-app-webrestriction=y
+          CONFIG_PACKAGE_luci-i18n-webrestriction-zh-cn=y
           CONFIG_PACKAGE_iptables=y
           CONFIG_PACKAGE_dnsmasq-full=y
           CONFIG_PACKAGE_ipset=y
@@ -55,6 +57,9 @@ jobs:
           CONFIG_PACKAGE_kmod-ipt-core=y
           CONFIG_PACKAGE_kmod-ipt-ipset=y
           CONFIG_PACKAGE_luci-base=y
+          CONFIG_PACKAGE_ebtables=y
+          CONFIG_PACKAGE_kmod-ebtables=y
+          CONFIG_PACKAGE_kmod-ipt-extra=y
           EOF
           make defconfig
 
@@ -66,10 +71,10 @@ jobs:
       - name: Build plugin
         run: |
           cd openwrt
-          make package/luci-app-blockclient/compile -j$(nproc) V=s
+          make package/luci-app-webrestriction/compile -j$(nproc) V=s
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: blockclient-x86_64
-          path: openwrt/bin/packages/x86_64/base/luci-app-blockclient*.ipk
+          name: webrestriction-x86_64
+          path: openwrt/bin/packages/x86_64/base/luci-app-webrestriction*.ipk
