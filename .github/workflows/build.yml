@@ -40,7 +40,7 @@ jobs:
           cd openwrt
           git clone https://github.com/lj8812/luci-app-webrestriction.git  package/luci-app-webrestriction
           # ========== 新增修复步骤 ==========
-          cd luci-app-webrestriction
+          cd package/luci-app-webrestriction
           sed -i 's/^    /\t/' Makefile  # 修复Makefile缩进
           
           # 验证Tab缩进（显示^I表示成功）
