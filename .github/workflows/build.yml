@@ -38,6 +38,18 @@ jobs:
           cd openwrt/package
           git clone https://github.com/lj8812/luci-app-webrestriction.git
           
+          # ========== 新增修复步骤 ==========
+          cd luci-app-webrestriction
+          sed -i 's/^    /\t/' Makefile  # 修复Makefile缩进
+          
+          # 验证Tab缩进（显示^I表示成功）
+          echo "::group::Makefile缩进检查"
+          cat -e -t -v Makefile | grep -m 3 '^\^I'
+          [ $? -eq 0 ] && echo "✅ Tab缩进验证通过" || { echo "❌ Tab缩进异常"; exit 1; }
+          echo "::endgroup::"
+          cd ..
+          # ================================
+          
           # 调试目录结构
           echo "::group::原始仓库结构"
           ls -laR luci-app-webrestriction
